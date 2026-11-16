@@ -1,24 +1,22 @@
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
+import AuthPage from './components/auth-page'
 import DashboardPages from './components/dashboard-pages'
 import {
-  Activity,
-  ArrowUpRight,
   Bell,
   Bot,
   BookOpen,
   ChevronDown,
-  Clock3,
   HelpCircle,
   LayoutDashboard,
   Menu,
   MessageSquare,
   MoreHorizontal,
-  Plus,
   Search,
   Settings,
   Sparkles,
-  TrendingUp,
   Users,
   X,
 } from 'lucide-react'
@@ -31,44 +29,46 @@ const navigation = [
   { name: 'Knowledge Base', icon: BookOpen },
 ]
 
-const conversations = [
-  {
-    initials: 'JD',
-    name: 'James Daniels',
-    message: 'I would like to know more about your services.',
-    time: '2 min ago',
-    status: 'New',
-    color: 'bg-blue-500/15 text-blue-400',
-  },
-  {
-    initials: 'SM',
-    name: 'Sarah Mitchell',
-    message: 'Can I book an appointment for Friday?',
-    time: '18 min ago',
-    status: 'Active',
-    color: 'bg-cyan-500/15 text-cyan-400',
-  },
-  {
-    initials: 'TK',
-    name: 'Thabo Khumalo',
-    message: 'Thank you, that answers my question.',
-    time: '42 min ago',
-    status: 'Resolved',
-    color: 'bg-emerald-500/15 text-emerald-400',
-  },
-  {
-    initials: 'LN',
-    name: 'Lauren Naidoo',
-    message: 'Do you offer delivery in Durban?',
-    time: '1 hour ago',
-    status: 'Active',
-    color: 'bg-cyan-500/15 text-cyan-400',
-  },
-]
+
+
 
 function App() {
-  const [activePage, setActivePage] = useState('Overview')
+  const [session, setSession] = useState<Session | null>(null)
+const [authLoading, setAuthLoading] = useState(true)
+const [activePage, setActivePage] = useState('Overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+useEffect(() => {
+  supabase.auth.getSession().then(({ data, error }) => {
+    if (error) {
+      console.error('Session check failed:', error.message)
+    }
+
+    setSession(data.session)
+    setAuthLoading(false)
+  })
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    setSession(session)
+  })
+
+  return () => subscription.unsubscribe()
+}, [])
+
+if (authLoading) {
+  return (
+    <div className="dark min-h-screen bg-[#080d18] flex items-center justify-center text-slate-400">
+      Loading SINTAK...
+    </div>
+  )
+}
+
+if (!session) {
+  return <AuthPage />
+}
+  
 
   return (
     <><div className="dark min-h-screen bg-[#080d18] text-slate-100">
@@ -231,13 +231,28 @@ function App() {
                 <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-cyan-400" />
               </button>
               <div className="hidden h-8 w-px bg-[#253247] sm:block" />
-              <div className="hidden items-center gap-2 sm:flex">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-xs font-bold text-blue-400">
-                  AC
-                </div>
-                <span className="text-sm text-slate-300">Acme Company</span>
-                <ChevronDown size={15} className="text-slate-500" />
-              </div>
+             <div className="hidden items-center gap-3 sm:flex">
+  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-xs font-bold text-blue-400">
+    {session.user.email?.charAt(0).toUpperCase() ?? 'U'}
+  </div>
+
+  <span className="max-w-[180px] truncate text-sm text-slate-300">
+    {session.user.email}
+  </span>
+
+  <button
+    onClick={async () => {
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        console.error('Logout failed:', error.message)
+      }
+    }}
+    className="rounded-lg border border-[#253247] px-3 py-2 text-xs text-slate-400 transition hover:bg-[#151f30] hover:text-white"
+  >
+    Sign out
+  </button>
+</div>
             </div>
           </header>
 
