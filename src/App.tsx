@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import AuthPage from './components/auth-page'
 import DashboardPages from './components/dashboard-pages'
+import OnboardingPage from './components/onboarding-page'
 import {
   Bell,
   Bot,
@@ -36,6 +37,14 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
 const [authLoading, setAuthLoading] = useState(true)
 const [activePage, setActivePage] = useState('Overview')
+const [business, setBusiness] = useState<{
+  id: string
+  name: string
+} | null>(null)
+
+const [businessLoading, setBusinessLoading] = useState(true)
+const [businessError, setBusinessError] = useState('')
+const [businessRefresh, setBusinessRefresh] = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
 useEffect(() => {
@@ -56,6 +65,44 @@ useEffect(() => {
 
   return () => subscription.unsubscribe()
 }, [])
+useEffect(() => {
+  if (!session) {
+    setBusiness(null)
+    setBusinessLoading(false)
+    return
+  }
+
+  let cancelled = false
+
+  async function loadBusiness() {
+    setBusinessLoading(true)
+    setBusinessError('')
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('id, name')
+      .limit(1)
+      .maybeSingle()
+
+    if (cancelled) return
+
+    if (error) {
+      console.error('Business lookup failed:', error.message)
+      setBusinessError(error.message)
+      setBusiness(null)
+    } else {
+      setBusiness(data)
+    }
+
+    setBusinessLoading(false)
+  }
+
+  loadBusiness()
+
+  return () => {
+    cancelled = true
+  }
+}, [session, businessRefresh])
 
 if (authLoading) {
   return (
@@ -68,7 +115,37 @@ if (authLoading) {
 if (!session) {
   return <AuthPage />
 }
-  
+ if (businessLoading) {
+  return (
+    <div className="dark min-h-screen bg-[#080d18] flex items-center justify-center text-slate-400">
+      Loading your workspace...
+    </div>
+  )
+}
+
+if (businessError) {
+  return (
+    <div className="dark min-h-screen bg-[#080d18] flex flex-col items-center justify-center gap-4 text-slate-300">
+      <p>We couldn't load your workspace.</p>
+      <p className="text-sm text-red-400">{businessError}</p>
+      <button
+        onClick={() => setBusinessRefresh((value) => value + 1)}
+        className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+      >
+        Try again
+      </button>
+    </div>
+  )
+}
+
+if (!business) {
+  return (
+    <OnboardingPage
+      userId={session.user.id}
+      onComplete={() => setBusinessRefresh((value) => value + 1)}
+    />
+  )
+} 
 
   return (
     <><div className="dark min-h-screen bg-[#080d18] text-slate-100">
@@ -110,10 +187,10 @@ if (!session) {
             </p>
             <div className="mb-6 flex items-center gap-3 rounded-xl border border-[#253247] bg-[#151f30] p-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/15 text-sm font-bold text-blue-400">
-                AC
+                {business.name.slice(0, 2).toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-200">Acme Company</p>
+               <p className="truncate text-sm font-semibold text-slate-200">{business.name}</p>
                 <p className="text-xs text-slate-500">Free plan</p>
               </div>
               <ChevronDown size={15} className="text-slate-500" />
