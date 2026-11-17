@@ -1,5 +1,5 @@
-
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 import {
   Plus,
   Bot,
@@ -9,7 +9,6 @@ import {
   Settings,
   HelpCircle,
   Search,
-  MoreHorizontal,
   ArrowUpRight,
   Upload,
   Globe,
@@ -21,13 +20,19 @@ import {
 type DashboardPagesProps = {
   page: string
   onNavigate: (page: string) => void
+  businessId: string
 }
-
-const sampleChatbots = [
-  { name: 'Customer Support Bot', status: 'Active', conversations: 842 },
-  { name: 'Sales Assistant', status: 'Active', conversations: 321 },
-  { name: 'Website Assistant', status: 'Draft', conversations: 121 },
-]
+type Chatbot = {
+  id: string
+  business_id: string
+  name: string
+  description: string | null
+  status: 'draft' | 'active' | 'paused'
+  welcome_message: string
+  primary_color: string
+  created_at: string
+  updated_at: string
+}
 
 const sampleLeads = [
   { name: 'James Daniels', email: 'james@example.com', source: 'Website', status: 'New' },
@@ -81,8 +86,11 @@ function StatCard({
   )
 }
 
-function DashboardPages({ page, onNavigate }: DashboardPagesProps) {
-  const [chatbots, setChatbots] = useState(sampleChatbots)
+function DashboardPages({ page, onNavigate, businessId }: DashboardPagesProps) {
+  const [chatbots, setChatbots] = useState<Chatbot[]>([])
+  const [chatbotsLoading, setChatbotsLoading] = useState(false)
+  const [chatbotError, setChatbotError] = useState('')
+  const [savingChatbot, setSavingChatbot] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newBotName, setNewBotName] = useState('')
   const [search, setSearch] = useState('')
@@ -92,17 +100,76 @@ function DashboardPages({ page, onNavigate }: DashboardPagesProps) {
     'Product and service information',
   ])
 
-  function createChatbot(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!newBotName.trim()) return
+    useEffect(() => {
+    if (page !== 'AI Chatbots') return
 
-    setChatbots([
-      ...chatbots,
-      { name: newBotName.trim(), status: 'Draft', conversations: 0 },
-    ])
-    setNewBotName('')
-    setShowCreateForm(false)
+    let cancelled = false
+
+    async function loadChatbots() {
+      setChatbotsLoading(true)
+      setChatbotError('')
+
+      const { data, error } = await supabase
+        .from('chatbots')
+        .select(
+          'id, business_id, name, description, status, welcome_message, primary_color, created_at, updated_at'
+        )
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: false })
+
+      if (cancelled) return
+
+      if (error) {
+        setChatbotError(error.message)
+      } else {
+        setChatbots(data ?? [])
+      }
+
+      setChatbotsLoading(false)
+    }
+
+    loadChatbots()
+
+    return () => {
+      cancelled = true
+    }
+  }, [page, businessId])
+
+  async function createChatbot(event: React.FormEvent<HTMLFormElement>) {
+  event.preventDefault()
+
+  const name = newBotName.trim()
+
+  if (name.length < 2) {
+    setChatbotError('Chatbot name must be at least 2 characters.')
+    return
   }
+
+  setSavingChatbot(true)
+  setChatbotError('')
+
+  const { data, error } = await supabase
+    .from('chatbots')
+    .insert({
+      business_id: businessId,
+      name,
+    })
+    .select(
+      'id, business_id, name, description, status, welcome_message, primary_color, created_at, updated_at'
+    )
+    .single()
+
+  setSavingChatbot(false)
+
+  if (error) {
+    setChatbotError(error.message)
+    return
+  }
+
+  setChatbots((current) => [data, ...current])
+  setNewBotName('')
+  setShowCreateForm(false)
+}
 
   const filteredMessages = sampleMessages.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -204,9 +271,13 @@ function DashboardPages({ page, onNavigate }: DashboardPagesProps) {
               required
             />
             <div className="mt-4 flex gap-3">
-              <button type="submit" className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-400">
-                Create
-              </button>
+              <button
+  type="submit"
+  disabled={savingChatbot}
+  className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {savingChatbot ? 'Creating...' : 'Create'}
+</button>
               <button type="button" onClick={() => setShowCreateForm(false)} className="rounded-lg border border-[#253247] px-4 py-2 text-sm text-slate-300">
                 Cancel
               </button>
@@ -214,31 +285,59 @@ function DashboardPages({ page, onNavigate }: DashboardPagesProps) {
           </form>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {chatbots.map((bot, index) => (
-            <div key={`${bot.name}-${index}`} className="rounded-xl border border-[#253247] bg-[#101827] p-5">
-              <div className="flex items-start justify-between">
-                <div className="rounded-xl bg-blue-500/10 p-3 text-blue-400">
-                  <Bot size={23} />
+        {chatbotError && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+            {chatbotError}
+          </div>
+        )}
+
+        {chatbotsLoading ? (
+          <div className="rounded-xl border border-[#253247] bg-[#101827] p-8 text-center text-sm text-slate-400">
+            Loading your chatbots...
+          </div>
+        ) : chatbots.length === 0 ? (
+          <div className="rounded-xl border border-[#253247] bg-[#101827] p-10 text-center">
+            <Bot size={32} className="mx-auto text-slate-500" />
+            <h3 className="mt-4 font-semibold text-white">No chatbots yet</h3>
+            <p className="mt-2 text-sm text-slate-400">
+              Create your first AI chatbot to get started.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {chatbots.map((bot) => (
+              <div key={bot.id} className="rounded-xl border border-[#253247] bg-[#101827] p-5">
+                <div className="flex items-start justify-between">
+                  <div className="rounded-xl bg-blue-500/10 p-3 text-blue-400">
+                    <Bot size={23} />
+                  </div>
                 </div>
-                <button aria-label={`More options for ${bot.name}`} className="text-slate-500 hover:text-white">
-                  <MoreHorizontal size={20} />
-                </button>
+
+                <h3 className="mt-5 font-semibold text-white">{bot.name}</h3>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  Created {new Date(bot.created_at).toLocaleDateString()}
+                </p>
+
+                <div className="mt-5 flex items-center justify-between border-t border-[#253247] pt-4">
+                  <span className={`rounded-md px-2 py-1 text-xs ${
+                    bot.status === 'active'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : bot.status === 'paused'
+                        ? 'bg-slate-500/10 text-slate-400'
+                        : 'bg-amber-500/10 text-amber-400'
+                  }`}>
+                    {bot.status.charAt(0).toUpperCase() + bot.status.slice(1)}
+                  </span>
+
+                  <button className="text-xs font-semibold text-blue-400 hover:text-cyan-400">
+                    Configure →
+                  </button>
+                </div>
               </div>
-              <h3 className="mt-5 font-semibold text-white">{bot.name}</h3>
-              <p className="mt-2 text-xs text-slate-500">{bot.conversations} conversations</p>
-              <div className="mt-5 flex items-center justify-between border-t border-[#253247] pt-4">
-                <span className={`rounded-md px-2 py-1 text-xs ${bot.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                  {bot.status}
-                </span>
-                <button className="text-xs font-semibold text-blue-400 hover:text-cyan-400">
-                  Configure →
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-slate-600">Chatbots created here are temporary local examples. Database saving comes later.</p>
+            ))}
+          </div>
+        )}
       </div>
     )
   }

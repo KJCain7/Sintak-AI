@@ -335,8 +335,9 @@ if (!business) {
 
                    <div className="mx-auto max-w-[1500px] p-4 sm:p-8">
             <DashboardPages
-              page={activePage}
-              onNavigate={setActivePage}
+               page={activePage}
+               onNavigate={setActivePage}
+               businessId={business.id}
             />
           </div>
                 </main>
