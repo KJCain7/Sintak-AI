@@ -92,6 +92,13 @@ function DashboardPages({ page, onNavigate, businessId }: DashboardPagesProps) {
   const [chatbotError, setChatbotError] = useState('')
   const [savingChatbot, setSavingChatbot] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [selectedChatbot, setSelectedChatbot] = useState<Chatbot | null>(null)
+  const [savingConfiguration, setSavingConfiguration] = useState(false)
+  const [editBotName, setEditBotName] = useState('')
+  const [editBotDescription, setEditBotDescription] = useState('')
+  const [editWelcomeMessage, setEditWelcomeMessage] = useState('')
+  const [editPrimaryColor, setEditPrimaryColor] = useState('#2563EB')
+  const [editBotStatus, setEditBotStatus] = useState<Chatbot['status']>('draft')
   const [newBotName, setNewBotName] = useState('')
   const [search, setSearch] = useState('')
   const [knowledgeSources, setKnowledgeSources] = useState([
@@ -135,42 +142,110 @@ function DashboardPages({ page, onNavigate, businessId }: DashboardPagesProps) {
     }
   }, [page, businessId])
 
-  async function createChatbot(event: React.FormEvent<HTMLFormElement>) {
-  event.preventDefault()
+    async function createChatbot(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
 
-  const name = newBotName.trim()
+    const name = newBotName.trim()
 
-  if (name.length < 2) {
-    setChatbotError('Chatbot name must be at least 2 characters.')
-    return
+    if (name.length < 2) {
+      setChatbotError('Chatbot name must be at least 2 characters.')
+      return
+    }
+
+    setSavingChatbot(true)
+    setChatbotError('')
+
+    const { data, error } = await supabase
+      .from('chatbots')
+      .insert({
+        business_id: businessId,
+        name,
+      })
+      .select(
+        'id, business_id, name, description, status, welcome_message, primary_color, created_at, updated_at'
+      )
+      .single()
+
+    setSavingChatbot(false)
+
+    if (error) {
+      setChatbotError(error.message)
+      return
+    }
+
+    setChatbots((current) => [data, ...current])
+    setNewBotName('')
+    setShowCreateForm(false)
   }
 
-  setSavingChatbot(true)
-  setChatbotError('')
+  async function saveChatbotConfiguration(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault()
 
-  const { data, error } = await supabase
-    .from('chatbots')
-    .insert({
-      business_id: businessId,
-      name,
-    })
-    .select(
-      'id, business_id, name, description, status, welcome_message, primary_color, created_at, updated_at'
+    if (!selectedChatbot) return
+
+    const name = editBotName.trim()
+    const description = editBotDescription.trim()
+    const welcomeMessage = editWelcomeMessage.trim()
+
+    if (name.length < 2) {
+      setChatbotError('Chatbot name must be at least 2 characters.')
+      return
+    }
+
+    if (!welcomeMessage) {
+      setChatbotError('Welcome message cannot be empty.')
+      return
+    }
+
+    if (!/^#[0-9A-Fa-f]{6}$/.test(editPrimaryColor)) {
+      setChatbotError('Please choose a valid colour.')
+      return
+    }
+
+    setSavingConfiguration(true)
+    setChatbotError('')
+
+    const { data, error } = await supabase
+      .from('chatbots')
+      .update({
+        name,
+        description: description || null,
+        welcome_message: welcomeMessage,
+        primary_color: editPrimaryColor,
+        status: editBotStatus,
+      })
+      .eq('id', selectedChatbot.id)
+      .eq('business_id', businessId)
+      .select(
+        'id, business_id, name, description, status, welcome_message, primary_color, created_at, updated_at'
+      )
+      .single()
+
+    setSavingConfiguration(false)
+
+    if (error) {
+      setChatbotError(error.message)
+      return
+    }
+
+    setChatbots((current) =>
+      current.map((bot) => (bot.id === data.id ? data : bot))
     )
-    .single()
 
-  setSavingChatbot(false)
-
-  if (error) {
-    setChatbotError(error.message)
-    return
+    setSelectedChatbot(data)
   }
-
-  setChatbots((current) => [data, ...current])
-  setNewBotName('')
-  setShowCreateForm(false)
+function openChatbotConfiguration(bot: Chatbot) {
+  setSelectedChatbot(bot)
+  setEditBotName(bot.name)
+  setEditBotDescription(bot.description ?? '')
+  setEditWelcomeMessage(bot.welcome_message)
+  setEditPrimaryColor(bot.primary_color)
+  setEditBotStatus(bot.status)
+  setChatbotError('')
+  onNavigate('Chatbot Configuration')
 }
-
   const filteredMessages = sampleMessages.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase()) ||
     item.message.toLowerCase().includes(search.toLowerCase())
@@ -240,6 +315,117 @@ function DashboardPages({ page, onNavigate, businessId }: DashboardPagesProps) {
       </div>
     )
   }
+if (page === 'Chatbot Configuration') {
+  return (
+    <div className="space-y-6">
+      <button
+        type="button"
+        onClick={() => onNavigate('AI Chatbots')}
+        className="text-sm text-blue-400 hover:text-cyan-400"
+      >
+        ← Back to AI Chatbots
+      </button>
+
+    {selectedChatbot && (
+        <form
+    onSubmit={saveChatbotConfiguration}
+    className="rounded-xl border border-blue-500/30 bg-[#101827] p-6 space-y-5"
+  >
+    <div className="flex items-center justify-between">
+      <div>
+        <h3 className="text-lg font-semibold text-white">
+          Configure chatbot
+        </h3>
+          <p className="mt-1 text-sm text-slate-400">
+          Customise your AI assistant's settings.
+        </p>
+      </div>
+
+      <button
+        onClick={() => setSelectedChatbot(null)}
+        className="text-sm text-slate-400 hover:text-white"
+      >
+        Close
+      </button>
+    </div>
+
+    <div>
+      <label className="block text-sm text-slate-400">Chatbot name</label>
+      <input
+        value={editBotName}
+        onChange={(event) => setEditBotName(event.target.value)}
+        className="mt-2 w-full rounded-lg border border-[#253247] bg-[#080d18] px-3 py-3 text-sm text-white outline-none focus:border-blue-500"
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm text-slate-400">Description</label>
+      <textarea
+        value={editBotDescription}
+        onChange={(event) => setEditBotDescription(event.target.value)}
+        rows={3}
+        placeholder="Describe what this chatbot does..."
+        className="mt-2 w-full rounded-lg border border-[#253247] bg-[#080d18] px-3 py-3 text-sm text-white outline-none focus:border-blue-500"
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm text-slate-400">Welcome message</label>
+      <textarea
+        value={editWelcomeMessage}
+        onChange={(event) => setEditWelcomeMessage(event.target.value)}
+        rows={3}
+        className="mt-2 w-full rounded-lg border border-[#253247] bg-[#080d18] px-3 py-3 text-sm text-white outline-none focus:border-blue-500"
+      />
+    </div>
+
+    <div>
+      <label className="block text-sm text-slate-400">Primary colour</label>
+      <div className="mt-2 flex items-center gap-3">
+        <input
+          type="color"
+          value={editPrimaryColor}
+          onChange={(event) => setEditPrimaryColor(event.target.value)}
+          className="h-11 w-16 cursor-pointer rounded-lg border border-[#253247] bg-[#080d18] p-1"
+        />
+        <span className="text-sm text-slate-400">{editPrimaryColor}</span>
+      </div>
+    </div>
+
+    <div>
+      <label className="block text-sm text-slate-400">Status</label>
+      <select
+        value={editBotStatus}
+        onChange={(event) => setEditBotStatus(event.target.value as Chatbot['status'])}
+        className="mt-2 w-full rounded-lg border border-[#253247] bg-[#080d18] px-3 py-3 text-sm text-white outline-none focus:border-blue-500"
+      >
+        <option value="draft">Draft</option>
+        <option value="active">Active</option>
+        <option value="paused">Paused</option>
+      </select>
+    </div>
+
+    <div className="flex gap-3 border-t border-[#253247] pt-5">
+      <button
+        disabled={savingConfiguration}
+        className="rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-400 disabled:opacity-50"
+      >
+        {savingConfiguration ? 'Saving...' : 'Save changes'}
+      </button>
+
+      <button
+        onClick={() => setSelectedChatbot(null)}
+        className="rounded-lg border border-[#253247] px-5 py-2.5 text-sm text-slate-300 hover:text-white"
+      >
+        Cancel
+      </button>
+    </div>
+</form>
+)}
+
+    </div>
+  )
+}
 
   if (page === 'AI Chatbots') {
     return (
@@ -284,6 +470,7 @@ function DashboardPages({ page, onNavigate, businessId }: DashboardPagesProps) {
             </div>
           </form>
         )}
+       
 
         {chatbotError && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
@@ -330,10 +517,12 @@ function DashboardPages({ page, onNavigate, businessId }: DashboardPagesProps) {
                     {bot.status.charAt(0).toUpperCase() + bot.status.slice(1)}
                   </span>
 
-                  <button className="text-xs font-semibold text-blue-400 hover:text-cyan-400">
-                    Configure →
-                  </button>
-                </div>
+<button
+  onClick={() => openChatbotConfiguration(bot)}
+  className="text-xs font-semibold text-blue-400 hover:text-cyan-400"
+>
+  Configure →
+</button>             </div>
               </div>
             ))}
           </div>
